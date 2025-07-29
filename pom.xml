@@ -67,7 +67,38 @@
 		<dependency>
 			<groupId>com.centralconsig.core</groupId>
 			<artifactId>central-consig-bancos-core</artifactId>
-			<version>1.0.9</version>
+			<version>1.0.91</version>
+		</dependency>
+
+		<!-- Google API -->
+		<dependency>
+			<groupId>com.google.api-client</groupId>
+			<artifactId>google-api-client</artifactId>
+			<version>1.34.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.oauth-client</groupId>
+			<artifactId>google-oauth-client-jetty</artifactId>
+			<version>1.34.1</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.apis</groupId>
+			<artifactId>google-api-services-sheets</artifactId>
+			<version>v4-rev581-1.25.0</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.http-client</groupId>
+			<artifactId>google-http-client-jackson2</artifactId>
+			<version>1.46.3</version>
+		</dependency>
+
+		<dependency>
+			<groupId>com.google.auth</groupId>
+			<artifactId>google-auth-library-oauth2-http</artifactId>
+			<version>1.17.0</version>
 		</dependency>
 	</dependencies>
 

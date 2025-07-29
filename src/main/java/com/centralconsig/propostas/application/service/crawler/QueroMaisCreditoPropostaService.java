@@ -9,6 +9,8 @@ import com.centralconsig.core.application.service.crawler.WebDriverService;
 import com.centralconsig.core.application.service.system.SystemConfigurationService;
 import com.centralconsig.core.application.utils.CrawlerUtils;
 import com.centralconsig.core.domain.entity.*;
+import com.centralconsig.propostas.application.dto.PropostaPlanilhaResponseDTO;
+import com.centralconsig.propostas.application.service.PlanilhaDigitacaoPropostasService;
 import org.openqa.selenium.*;
 import org.openqa.selenium.interactions.Actions;
 import org.openqa.selenium.support.ui.ExpectedConditions;
@@ -23,10 +25,7 @@ import java.io.File;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -43,29 +42,36 @@ public class QueroMaisCreditoPropostaService {
     private final QueroMaisCreditoLoginService queroMaisCreditoLoginService;
     private final UsuarioLoginQueroMaisCreditoService usuarioLoginQueroMaisCreditoService;
     private final SystemConfigurationService systemConfigurationService;
+    private final PlanilhaDigitacaoPropostasService planilhaDigitacaoPropostasService;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    private static final int THREAD_COUNT = 9;
+    List<PropostaPlanilhaResponseDTO> dadosPlanilha = null;
 
     private static final Logger log = LoggerFactory.getLogger(QueroMaisCreditoPropostaService.class);
 
     public QueroMaisCreditoPropostaService(WebDriverService webDriverService, ClienteService clienteService,
                PropostaService propostaService, UsuarioLoginQueroMaisCreditoService usuarioLoginQueroMaisCreditoService,
-               QueroMaisCreditoLoginService queroMaisCreditoLoginService, SystemConfigurationService systemConfigurationService) {
+               QueroMaisCreditoLoginService queroMaisCreditoLoginService, SystemConfigurationService systemConfigurationService,
+               PlanilhaDigitacaoPropostasService planilhaDigitacaoPropostasService) {
         this.webDriverService = webDriverService;
         this.clienteService = clienteService;
         this.propostaService = propostaService;
         this.usuarioLoginQueroMaisCreditoService = usuarioLoginQueroMaisCreditoService;
         this.queroMaisCreditoLoginService = queroMaisCreditoLoginService;
         this.systemConfigurationService = systemConfigurationService;
+        this.planilhaDigitacaoPropostasService = planilhaDigitacaoPropostasService;
     }
 
 
-    @Scheduled(cron = "0 0,10,20,30 7-22 * * *", zone = "America/Sao_Paulo")
+//    @Scheduled(cron = "0 0,10,20,30 7-22 * * *", zone = "America/Sao_Paulo")
     //@Scheduled(fixedDelay = 1000)
     public void cadastrarPropostasAuto() {
         if (!systemConfigurationService.isPropostaAutomaticaAtiva()) {
             log.info("Propostas automáticas desativadas.");
+            return;
+        }
+        if (systemConfigurationService.isPropostaAutomaticaPlanilhaAtiva()) {
+            log.info("Propostas Automáticas de Planilha estão ativas, elas tem prioridade, portanto abortando este processo...");
             return;
         }
         if (!isRunning.compareAndSet(false, true)) {
@@ -74,7 +80,7 @@ public class QueroMaisCreditoPropostaService {
         }
         try {
             log.info("Executar Propostas iniciado");
-            criarProposta();
+            criarProposta(false, null);
             log.info("Executar Propostas finalizado");
         } catch (Exception e) {
             log.error("Erro crítico ao criar propostas. Erro: " + e.getMessage());
@@ -82,6 +88,61 @@ public class QueroMaisCreditoPropostaService {
          isRunning.set(false);
          CrawlerUtils.killChromeDrivers();
         }
+    }
+
+    @Scheduled(cron = "0 0,10,20,30 7-22 * * *", zone = "America/Sao_Paulo")
+//    @Scheduled(fixedDelay = 1000)
+    public void cadastrarPropostasPlanilhaAuto() {
+        if (!systemConfigurationService.isPropostaAutomaticaPlanilhaAtiva()) {
+            log.info("Propostas automáticas de planilha desativadas.");
+            return;
+        }
+        if (!isRunning.compareAndSet(false, true)) {
+            log.info("Criar Proposta Planilha já em execução. Ignorando nova tentativa.");
+            return;
+        }
+        try {
+            log.info("Executar Propostas Planilha iniciado");
+            criarPropostaPlanilha();
+            log.info("Executar Propostas Planilha finalizado");
+        } catch (Exception e) {
+            log.error("Erro crítico ao criar propostas. Erro: " + e.getMessage());
+        } finally {
+            isRunning.set(false);
+            CrawlerUtils.killChromeDrivers();
+        }
+    }
+
+    private void criarPropostaPlanilha() {
+        if (dadosPlanilha != null)
+            dadosPlanilha = null;
+        dadosPlanilha = planilhaDigitacaoPropostasService.lerPropostasDaPlanilha()
+                .stream().filter(c -> c.getProposta().isEmpty()).toList();
+
+        if (dadosPlanilha.isEmpty()) {
+            log.warn("A planilha está vazia ou não foram encontrados dados para processar.");
+            return;
+        }
+
+        List<Cliente> clientesPlanilha = new ArrayList<>();
+
+        for (PropostaPlanilhaResponseDTO clienteProposta : dadosPlanilha) {
+            Cliente cliente = clienteService.findByCpf(clienteProposta.getCpf());
+            if (cliente == null) {
+                log.error("Cliente '" + clienteProposta.getCpf() + "' não encontrado.");
+                continue;
+            }
+            else if (cliente.getDadosBancarios() == null || cliente.getDadosBancarios().getAgencia() == null) {
+                log.error("Dados Bancários do Cliente '" + cliente.getCpf() + "' não encontrados...");
+                continue;
+            }
+            clientesPlanilha.add(cliente);
+        }
+        if (clientesPlanilha.isEmpty()) {
+            log.warn("Não há clientes a serem processados na planilha.");
+            return;
+        }
+        criarProposta(true, clientesPlanilha);
     }
 
     @Scheduled(cron = "0 40,50 7-23 * * *", zone = "America/Sao_Paulo")
@@ -104,21 +165,27 @@ public class QueroMaisCreditoPropostaService {
         }
     }
 
-    private void criarProposta() {
+    private void criarProposta(boolean isPlanilha, List<Cliente> clientesPlanilha) {
         List<UsuarioLoginQueroMaisCredito> usuarios = usuarioLoginQueroMaisCreditoService.retornaUsuariosParaCrawler().stream()
                 .filter(usuario -> !usuario.isSomenteConsulta())
                 .toList();
 
-        List<Cliente> clientes = clienteService.clientesFiltradosPorMargem().stream()
+        List<Cliente> clientes;
+
+        if (!isPlanilha)
+            clientes = clienteService.clientesFiltradosPorMargem().stream()
                 .filter(cliente -> cliente.getDadosBancarios() != null)
                 .filter(cliente -> !cliente.getDadosBancarios().getBanco().isEmpty())
                 .toList();
+        else clientes = clientesPlanilha;
 
         log.info("Número elegível de clientes para preencher propostas: " + clientes.size());
 
-        int numThreads = usuarios.size();
         int totalClientes = clientes.size();
-        int clientesPorThread = totalClientes / numThreads;
+        int totalUsuarios = usuarios.size();
+        int numThreads = Math.min(totalClientes, totalUsuarios);
+
+        int clientesPorThread = (int) Math.ceil((double) totalClientes / numThreads);
 
         LocalDateTime tempoFinal = LocalDateTime.now().plusMinutes(9);
 
@@ -127,17 +194,28 @@ public class QueroMaisCreditoPropostaService {
         try {
             for (int i = 0; i < numThreads; i++) {
                 int start = i * clientesPorThread;
-                int end = (i == numThreads - 1) ? totalClientes : (i + 1) * clientesPorThread;
+                int end = Math.min(start + clientesPorThread, totalClientes);
+
+                if (start >= end) {
+                    log.info("Thread {} não possui clientes para processar.", i);
+                    continue;
+                }
+
                 List<Cliente> subLista = clientes.subList(start, end);
-                UsuarioLoginQueroMaisCredito usuario = usuarios.get(i % usuarios.size());
+                UsuarioLoginQueroMaisCredito usuario = usuarios.get(i);
 
                 executor.submit(() -> {
                     WebDriver driver = null;
                     try {
                         driver = webDriverService.criarDriver();
 
+
+                        UsuarioLoginQueroMaisCredito usuario2 = new UsuarioLoginQueroMaisCredito();
+                        usuario2.setUsername("45236717884_900411");
+                        usuario2.setPassword("Sucesso@2025");
+
                         WebDriverWait wait = webDriverService.criarWait(driver);
-                        if (!queroMaisCreditoLoginService.seleniumLogin(driver, usuario)) {
+                        if (!queroMaisCreditoLoginService.seleniumLogin(driver, usuario2)) {
                             log.error("Erro ao processar propostas. Falha no login.");
                             return;
                         }
@@ -152,6 +230,9 @@ public class QueroMaisCreditoPropostaService {
                                 Proposta proposta = new Proposta();
                                 proposta.setUsuario(usuario.getUsername());
                                 processarCliente(driver, wait, cliente, proposta);
+                                if (isPlanilha) {
+                                    preencherNumeroPropostaNaPlanilha(cliente, proposta.getNumeroProposta());
+                                }
                                 voltarParaTelaInicial(driver, usuario);
                             } catch (Exception e) {
                                 log.error("Erro ao processar cliente {}: {}", cliente.getCpf(), e.getMessage().substring(0, e.getMessage().indexOf("\n")));
@@ -177,6 +258,16 @@ public class QueroMaisCreditoPropostaService {
             log.error("Erro geral na criação de propostas: ", e);
         }
     }
+
+    private void preencherNumeroPropostaNaPlanilha(Cliente cliente, String numeroProposta) {
+        try {
+            planilhaDigitacaoPropostasService.atualizarStatusProposta(cliente.getCpf(), numeroProposta);
+            log.info("Planilha atualizada com OK para cliente: " + cliente.getCpf());
+        } catch (Exception e) {
+            log.error("Erro ao atualizar planilha para cliente " + cliente.getCpf() + ": " + e.getMessage());
+        }
+    }
+
 
     private void voltarParaTelaInicial(WebDriver driver, UsuarioLoginQueroMaisCredito usuario) {
         queroMaisCreditoLoginService.seleniumLogin(driver, usuario);
