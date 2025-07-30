@@ -1,6 +1,7 @@
 package com.centralconsig.propostas.application.service.crawler;
 
 
+import com.centralconsig.core.application.dto.response.SystemConfigurationResponseDTO;
 import com.centralconsig.core.application.service.ClienteService;
 import com.centralconsig.core.application.service.PropostaService;
 import com.centralconsig.core.application.service.crawler.QueroMaisCreditoLoginService;
@@ -47,6 +48,8 @@ public class QueroMaisCreditoPropostaService {
 
     List<PropostaPlanilhaResponseDTO> dadosPlanilha = null;
 
+    private SystemConfigurationResponseDTO systemConfiguration;
+
     private static final Logger log = LoggerFactory.getLogger(QueroMaisCreditoPropostaService.class);
 
     public QueroMaisCreditoPropostaService(WebDriverService webDriverService, ClienteService clienteService,
@@ -66,11 +69,13 @@ public class QueroMaisCreditoPropostaService {
 //    @Scheduled(cron = "0 0,10,20,30 7-22 * * *", zone = "America/Sao_Paulo")
     //@Scheduled(fixedDelay = 1000)
     public void cadastrarPropostasAuto() {
-        if (!systemConfigurationService.isPropostaAutomaticaAtiva()) {
+        systemConfiguration = systemConfigurationService.getSystemConfigurations();
+
+        if (!systemConfiguration.isPropostaAutomatica()) {
             log.info("Propostas automáticas desativadas.");
             return;
         }
-        if (systemConfigurationService.isPropostaAutomaticaPlanilhaAtiva()) {
+        if (systemConfiguration.isPropostaAutomaticaPlanilha()) {
             log.info("Propostas Automáticas de Planilha estão ativas, elas tem prioridade, portanto abortando este processo...");
             return;
         }
@@ -93,7 +98,9 @@ public class QueroMaisCreditoPropostaService {
     @Scheduled(cron = "0 0,10,20,30 7-22 * * *", zone = "America/Sao_Paulo")
 //    @Scheduled(fixedDelay = 1000)
     public void cadastrarPropostasPlanilhaAuto() {
-        if (!systemConfigurationService.isPropostaAutomaticaPlanilhaAtiva()) {
+        systemConfiguration = systemConfigurationService.getSystemConfigurations();
+
+        if (!systemConfiguration.isPropostaAutomaticaPlanilha()) {
             log.info("Propostas automáticas de planilha desativadas.");
             return;
         }
