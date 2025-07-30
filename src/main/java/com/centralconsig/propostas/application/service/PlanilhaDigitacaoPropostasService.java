@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import jakarta.annotation.PostConstruct;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,9 +33,12 @@ public class PlanilhaDigitacaoPropostasService {
 
     @PostConstruct
     public void init() throws Exception {
-        GoogleCredentials credentials = GoogleCredentials.fromStream(
-                new FileInputStream("src/main/resources/google/centralconsig-crawler-sheets-54eb9933de47.json")
-        ).createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
+        InputStream is = getClass()
+                .getClassLoader()
+                .getResourceAsStream("google/centralconsig-crawler-sheets-54eb9933de47.json");
+
+        GoogleCredentials credentials = GoogleCredentials.fromStream(is)
+                .createScoped(List.of("https://www.googleapis.com/auth/spreadsheets"));
 
         sheetsService = new Sheets.Builder(
                 GoogleNetHttpTransport.newTrustedTransport(),
